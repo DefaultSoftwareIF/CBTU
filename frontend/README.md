@@ -17,3 +17,8 @@ Sem autenticação ainda (`src/auth.ts`).
 ## Pendências
 
 - Editar ou apagar registro (exige sincronizar exclusões). Até lá, um registro recusado pela API fica no aparelho e não pode ser corrigido pelo app: as telas pedem para avisar o suporte.
+
+### A decidir
+
+- **Limite de descarte:** hoje uma roda no diâmetro mínimo configurado, ou abaixo dele, ainda pode receber usinagem; ela só aparece como "Descarte" na lista de rodas. Decidir se o registro deve ser barrado. O diâmetro mínimo começa em branco, não tem valor padrão e é configurado em cada aparelho (tela Config).
+- **Remoção estimada:** é arredondada para 1 casa decimal (`calcularRemocaoMm`), enquanto as medidas têm até 3. O diâmetro depois da usinagem é calculado com esse valor arredondado. Faz parte da fórmula provisória: definir a precisão ao validar a fórmula real com a oficina.
