@@ -13,3 +13,7 @@ npm run test:e2e   # Playwright (npx playwright install chromium antes)
 
 Provisório: a fórmula de remoção e os alvos dos perfis (`src/domain/calculo.ts`) são fictícios e precisam ser validados com a oficina.
 Sem autenticação ainda (`src/auth.ts`).
+
+## Pendências
+
+- Editar ou apagar registro (exige sincronizar exclusões). Até lá, um registro recusado pela API fica no aparelho e não pode ser corrigido pelo app: as telas pedem para avisar o suporte.
