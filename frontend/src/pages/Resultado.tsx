@@ -58,7 +58,7 @@ export function Resultado({ rascunho, onRegistrado }: { rascunho: Rascunho; onRe
               {restantes === null && <p className="dica">Defina o diâmetro mínimo em Config para estimar.</p>}
             </section>
 
-            <section className="card">
+            <section className="card barras">
               <h2 className="card-titulo">Material removido por perfil</h2>
               {ranking.map((item, i) => (
                 <div className="barra" key={item.perfil.id}>
@@ -76,7 +76,7 @@ export function Resultado({ rascunho, onRegistrado }: { rascunho: Rascunho; onRe
               ))}
             </section>
 
-            <section className="card">
+            <section className="card parametros-card">
               <h2 className="card-titulo">Parâmetros usados</h2>
               <dl className="parametros">
                 <div><dt>Diâmetro</dt><dd>{fmtNum(medidas.diametro)}</dd></div>

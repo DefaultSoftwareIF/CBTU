@@ -90,7 +90,7 @@ function ConfigForm({ inicial }: { inicial: ConfigTipo }) {
           <p>Defina quais perfis entram na comparação e quando uma roda deve ser descartada.</p>
         </div>
 
-        <section className="card">
+        <section className="card perfis">
           <h2 className="card-titulo">Perfis considerados</h2>
           {perfis.map((p) => (
             <div className="perfil" key={p.id}>

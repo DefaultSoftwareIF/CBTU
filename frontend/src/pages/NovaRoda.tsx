@@ -1,5 +1,5 @@
 import { useForm } from 'react-hook-form';
-import { IconeSeta } from '../components/icons';
+import { IconeSeta, IlustracaoEixo } from '../components/icons';
 import { NavInferior, StatusPill, TopbarMarca } from '../components/Layout';
 import { db } from '../db';
 import { fmtNum, parseNum } from '../format';
@@ -133,10 +133,13 @@ export function NovaRoda({ rascunho, onCalcular }: { rascunho?: Rascunho; onCalc
 
           <section className="card">
             <h2 className="card-titulo">3 · Eixo</h2>
-            {campo('anguloEixo', 'Ângulo do eixo (°)', {
-              required: 'Informe o ângulo do eixo',
-              validate: (t: string) => Number.isFinite(parseNum(t)) || 'Informe um número',
-            })}
+            <div className="eixo-linha">
+              {campo('anguloEixo', 'Ângulo do eixo (°)', {
+                required: 'Informe o ângulo do eixo',
+                validate: (t: string) => Number.isFinite(parseNum(t)) || 'Informe um número',
+              })}
+              <IlustracaoEixo />
+            </div>
           </section>
 
           <button type="submit" className="btn-primario">
