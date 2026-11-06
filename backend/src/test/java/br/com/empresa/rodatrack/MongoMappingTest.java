@@ -25,12 +25,16 @@ class MongoMappingTest {
 
     @BeforeEach
     void setUp() {
+        MongoCustomConversions conversoes = new MongoCustomConversions(List.of());
+
         MongoMappingContext contexto = new MongoMappingContext();
+        // Igual ao que o Spring Boot faz: sem isso, BigDecimal e Instant seriam tratados como entidades.
+        contexto.setSimpleTypeHolder(conversoes.getSimpleTypeHolder());
         contexto.setInitialEntitySet(Set.of(Roda.class, Usinagem.class));
         contexto.afterPropertiesSet();
 
         conversor = new MappingMongoConverter(NoOpDbRefResolver.INSTANCE, contexto);
-        conversor.setCustomConversions(new MongoCustomConversions(List.of()));
+        conversor.setCustomConversions(conversoes);
         conversor.afterPropertiesSet();
     }
 
