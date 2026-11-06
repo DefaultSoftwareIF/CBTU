@@ -117,3 +117,17 @@ Os testes da API e do front-end não precisam de MongoDB nem de Docker: a API é
 O [GitHub Actions](.github/workflows/ci.yml) roda em cada PR para a `main` e em cada push nela: testes da API, testes e build do front-end, Playwright e build das imagens Docker. O check `CI ok` só passa se todos passarem.
 
 As imagens são construídas, mas ainda não são executadas no CI.
+
+## Regra de branches
+
+- Uma branch por tarefa, com commits pequenos. Prefixos usados até aqui: `fix/`, `ci/` e `test/`.
+- Toda mudança entra na `main` por pull request, depois que o check `CI ok` passar.
+
+A `main` é protegida no GitHub:
+
+- O merge exige o check `CI ok`, vindo do GitHub Actions, e a branch atualizada com a `main`.
+- A regra vale também para administradores.
+- Force push e exclusão da `main` são bloqueados.
+- Aprovação de revisor não é obrigatória.
+
+Se o job `CI ok` for renomeado, os merges ficam travados até a proteção ser ajustada.
