@@ -14,3 +14,8 @@ export function parseNum(texto: string): number {
   const t = texto.trim().replace(',', '.');
   return t === '' ? NaN : Number(t);
 }
+
+/** Confere os limites de @Digits da API: até `inteiros` dígitos antes da vírgula e 3 casas depois. */
+export function cabeNaApi(n: number, inteiros: number): boolean {
+  return Math.abs(n) < 10 ** inteiros && Number(n.toFixed(3)) === n;
+}

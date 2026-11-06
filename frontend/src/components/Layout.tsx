@@ -16,6 +16,25 @@ function usePendentes(): number {
   );
 }
 
+/** Aparece só quando a API recusou algum registro: sem ele, a falha passaria despercebida. */
+export function AvisoRecusados() {
+  const recusados =
+    useLiveQuery(
+      async () =>
+        (await db.rodas.where('syncStatus').equals('recusado').count()) +
+        (await db.usinagens.where('syncStatus').equals('recusado').count()),
+      [],
+      0,
+    ) ?? 0;
+  if (recusados === 0) return null;
+  return (
+    <p className="aviso-recusados" role="alert" data-testid="aviso-recusados">
+      {recusados === 1 ? '1 registro recusado' : `${recusados} registros recusados`} pelo servidor. Os dados continuam
+      neste aparelho; avise o suporte.
+    </p>
+  );
+}
+
 /** "Online · 0 pendentes" / "Offline · 2 pendentes". */
 export function StatusPill() {
   const online = useOnline();

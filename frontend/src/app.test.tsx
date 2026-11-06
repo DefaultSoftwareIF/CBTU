@@ -147,3 +147,147 @@ describe('lista de rodas e limites', () => {
     expect(screen.queryByText('RD-0417')).toBeNull();
   });
 });
+
+describe('registro recusado pela API', () => {
+  const perfil = CONFIG_INICIAL.perfis[0];
+
+  /** Recusa com 400 qualquer lote que contenha a roda indicada, como o Bean Validation faz com o lote inteiro. */
+  function servidorQueRecusa(rodaId: string | null, status = 400) {
+    const fetchFalso = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method !== 'POST') return Response.json({ rodas: [], usinagens: [], cursor: '2026-10-26T20:00:00.000Z' });
+      const corpo = JSON.parse(init.body as string) as { rodas: { id: string }[]; usinagens: { id: string; rodaId: string }[] };
+      if (rodaId && (corpo.rodas.some((r) => r.id === rodaId) || corpo.usinagens.some((u) => u.rodaId === rodaId))) {
+        return new Response(null, { status });
+      }
+      return Response.json({
+        rodasAceitas: corpo.rodas.map((r) => r.id),
+        rodasIgnoradas: [],
+        usinagensAceitas: corpo.usinagens.map((u) => u.id),
+        usinagensIgnoradas: [],
+      });
+    });
+    vi.stubGlobal('fetch', fetchFalso);
+    return fetchFalso;
+  }
+
+  async function registrarOffline(...ids: string[]) {
+    definirOnline(false);
+    for (const id of ids) await registrarUsinagem(id, MEDIDAS, perfil, 1.8);
+    definirOnline(true);
+  }
+
+  const statusRodas = async () =>
+    Object.fromEntries((await db.rodas.toArray()).map((r) => [r.id, r.syncStatus]));
+
+  it('isola o registro recusado e envia os outros do mesmo lote', async () => {
+    await registrarOffline('RD-1', 'RD-RUIM', 'RD-3', 'RD-4');
+    servidorQueRecusa('RD-RUIM');
+
+    await sincronizar();
+
+    expect(await statusRodas()).toEqual({
+      'RD-1': 'sincronizado',
+      'RD-RUIM': 'recusado',
+      'RD-3': 'sincronizado',
+      'RD-4': 'sincronizado',
+    });
+    const usinagens = await db.usinagens.toArray();
+    expect(usinagens.filter((u) => u.syncStatus === 'recusado').map((u) => u.rodaId)).toEqual(['RD-RUIM']);
+    expect(usinagens.filter((u) => u.syncStatus === 'sincronizado')).toHaveLength(3);
+  });
+
+  it('continua baixando alterações depois de uma recusa', async () => {
+    await registrarOffline('RD-RUIM');
+    const fetchFalso = servidorQueRecusa('RD-RUIM');
+
+    await sincronizar();
+
+    expect(fetchFalso.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method !== 'POST')).toBe(true);
+    expect((await db.meta.get('syncCursor'))?.valor).toBe('2026-10-26T20:00:00.000Z');
+  });
+
+  it('reenvia o recusado e ele se resolve quando a API passa a aceitar', async () => {
+    await registrarOffline('RD-RUIM');
+    servidorQueRecusa('RD-RUIM');
+    await sincronizar();
+    expect((await db.rodas.get('RD-RUIM'))?.syncStatus).toBe('recusado');
+
+    servidorQueRecusa(null);
+    await sincronizar();
+
+    expect((await db.rodas.get('RD-RUIM'))?.syncStatus).toBe('sincronizado');
+  });
+
+  it('falha de servidor (500) não marca como recusado: tudo segue pendente', async () => {
+    await registrarOffline('RD-1');
+    servidorQueRecusa('RD-1', 500);
+
+    await sincronizar();
+
+    expect((await db.rodas.get('RD-1'))?.syncStatus).toBe('pendente');
+  });
+
+  it('mostra o aviso e o selo ao usuário, sem contar como pendente', async () => {
+    await registrarOffline('RD-RUIM');
+    servidorQueRecusa('RD-RUIM');
+    await sincronizar();
+
+    render(<App />);
+
+    expect((await screen.findByTestId('aviso-recusados')).textContent).toContain('2 registros recusados');
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Online · 0 pendentes'));
+
+    window.location.hash = '#/roda/RD-RUIM';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect((await screen.findByTestId('sync-status')).textContent).toBe('Recusado pelo servidor');
+    expect(screen.getByTestId('sync-status-roda').textContent).toBe('Recusado pelo servidor');
+  });
+});
+
+describe('validação conforme os limites da API', () => {
+  async function preencher(campos: Partial<Record<string, string>>) {
+    const user = userEvent.setup();
+    window.location.hash = '#/nova';
+    render(<App />);
+    const valores: Record<string, string> = {
+      'ID da roda': 'RD-1',
+      'Diâmetro (mm)': '840',
+      'Largura do aro (mm)': '135',
+      'Espessura do friso (mm)': '28',
+      'Altura do friso (mm)': '30',
+      'Ângulo do eixo (°)': '1',
+      ...campos,
+    };
+    for (const [rotulo, valor] of Object.entries(valores)) await user.type(screen.getByLabelText(rotulo), valor!);
+    await user.click(screen.getByRole('button', { name: 'Calcular perfil recomendado' }));
+  }
+
+  it.each([
+    ['Diâmetro (mm)', '840,1234', 'Use até 5 dígitos e 3 casas decimais'],
+    ['Diâmetro (mm)', '100000', 'Use até 5 dígitos e 3 casas decimais'],
+    ['Ângulo do eixo (°)', '1,2345', 'Use até 3 dígitos e 3 casas decimais'],
+    ['Ângulo do eixo (°)', '1000', 'Use até 3 dígitos e 3 casas decimais'],
+    ['ID da roda', 'R'.repeat(41), 'Use no máximo 40 caracteres'],
+  ])('%s com "%s" é barrado no formulário', async (rotulo, valor, mensagem) => {
+    await preencher({ [rotulo]: valor });
+    expect(await screen.findByText(mensagem)).toBeTruthy();
+    expect(screen.queryByTestId('perfil-recomendado')).toBeNull();
+  });
+
+  it('aceita o limite exato de 3 casas decimais', async () => {
+    await preencher({ 'Diâmetro (mm)': '840,123' });
+    expect(await screen.findByTestId('perfil-recomendado')).toBeTruthy();
+  });
+
+  it('Config barra alvo de perfil com mais de 3 casas decimais', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/config';
+    render(<App />);
+    await user.click((await screen.findAllByRole('button', { name: 'Editar' }))[0]);
+    const alvo = screen.getByLabelText('Alvo: espessura do friso (mm)');
+    await user.clear(alvo);
+    await user.type(alvo, '26,1234');
+    await user.click(screen.getByRole('button', { name: 'Salvar configurações' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('até 3 casas decimais');
+  });
+});
