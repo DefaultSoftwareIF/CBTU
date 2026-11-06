@@ -1,0 +1,67 @@
+name: Integracao temporaria
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  dev:
+    name: API com MongoDB real
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+      - run: cp .env.example .env
+      - run: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --wait mongo
+      - run: mvn -B -ntp -q -f backend/pom.xml -DskipTests package
+      - name: Sobe a API como no README
+        run: |
+          set -a; . ./.env; set +a
+          MONGODB_URI="mongodb://$MONGO_USER:$MONGO_PASSWORD@localhost:27017/rodatrack?authSource=admin" nohup java -jar backend/target/rodatrack-api-0.1.0.jar > api.log 2>&1 &
+          curl -sS -m 60 --retry-connrefused --retry 50 --retry-delay 1 http://localhost:8080/api/sync
+      - name: Envia, reenvia e baixa
+        run: |
+          M='{"diametro":840.123,"aro":135,"frisoEspessura":28,"frisoAltura":30,"anguloEixo":1.2}'
+          A='{"diametro":838.323,"aro":135,"frisoEspessura":26.8,"frisoAltura":30,"anguloEixo":1.2}'
+          T='2026-11-06T12:00:00.000Z'
+          B="{\"rodas\":[{\"id\":\"RD-0417\",\"usuarioId\":\"u\",\"medidasIniciais\":$M,\"criadoEm\":\"$T\",\"atualizadoEm\":\"$T\"}],\"usinagens\":[{\"id\":\"u-1\",\"rodaId\":\"RD-0417\",\"usuarioId\":\"u\",\"perfilNome\":\"AAR-1B NF\",\"remocaoMm\":1.8,\"medidasAntes\":$M,\"medidasApos\":$A,\"regraVersao\":\"0.1.0-placeholder\",\"criadoEm\":\"$T\",\"atualizadoEm\":\"$T\"}]}"
+          P() { curl -sS -f -X POST -H 'Content-Type: application/json' -d "$B" http://localhost:8080/api/sync; }
+          P | tee r1.json; echo
+          P | tee r2.json; echo
+          jq -e '.rodasAceitas==["RD-0417"] and .usinagensAceitas==["u-1"]' r1.json
+          jq -e '.rodasIgnoradas==["RD-0417"] and .usinagensIgnoradas==["u-1"]' r2.json
+          curl -sS -f http://localhost:8080/api/sync | tee g.json; echo
+          jq -e '.rodas[0].medidasIniciais.diametro==840.123 and .usinagens[0].medidasApos.diametro==838.323' g.json
+          C=$(jq -r .cursor g.json)
+          curl -sS -f "http://localhost:8080/api/sync?since=$C" | tee g2.json; echo
+          jq -e '(.rodas|length)==0 and (.usinagens|length)==0' g2.json
+      - if: ${{ !cancelled() }}
+        run: cat api.log | tail -40; docker compose logs mongo | tail -10
+  completo:
+    name: Ambiente completo com HTTPS
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - run: cp .env.example .env && sed -i 's/^SITE_ADDRESS=.*/SITE_ADDRESS=localhost/' .env
+      - run: mkdir -p certs
+      - run: openssl req -x509 -newkey rsa:2048 -nodes -keyout certs/server.key -out certs/server.crt -days 30 -subj "/CN=localhost" -addext "subjectAltName=DNS:localhost"
+      - run: docker compose up -d --build --wait mongo
+      - run: docker compose up -d --build
+      - name: Confere front e API por HTTPS
+        run: |
+          curl -sS -k -m 90 --retry-all-errors --retry 40 --retry-delay 2 -f https://localhost/api/sync | tee g.json; echo
+          jq -e 'has("cursor")' g.json
+          curl -sS -k -f -o index.html -D h.txt https://localhost/; grep -q RodaTrack index.html; cat h.txt
+          grep -qi 'no-cache' h.txt
+          curl -sS -k -f -o /dev/null -w 'sw.js %{http_code}\n' https://localhost/sw.js
+          curl -sS -k -f -o /dev/null -w 'manifest %{http_code}\n' https://localhost/manifest.webmanifest
+          curl -sS -k -f -o /dev/null -w 'rota do app %{http_code}\n' https://localhost/qualquer
+      - if: ${{ !cancelled() }}
+        run: docker compose ps; docker compose logs --tail=30
