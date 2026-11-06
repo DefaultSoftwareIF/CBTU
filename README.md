@@ -111,3 +111,9 @@ npm run test:e2e
 ```
 
 Os testes da API e do front-end não precisam de MongoDB nem de Docker: a API é simulada nos testes do front-end, e os repositórios nos da API.
+
+## CI
+
+O [GitHub Actions](.github/workflows/ci.yml) roda em cada PR para a `main` e em cada push nela: testes da API, testes e build do front-end, Playwright e build das imagens Docker. O check `CI ok` só passa se todos passarem.
+
+As imagens são construídas, mas ainda não são executadas no CI.
