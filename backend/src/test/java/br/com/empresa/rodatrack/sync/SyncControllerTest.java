@@ -78,6 +78,15 @@ class SyncControllerTest {
     }
 
     @Test
+    void diametroNegativoDepoisDaUsinagemRetorna400() throws Exception {
+        String impossivel = usinagem("1.8").replace("\"medidasApos\":{\"diametro\":840.0", "\"medidasApos\":{\"diametro\":-0.3");
+        mvc.perform(post("/api/sync").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"rodas\":[],\"usinagens\":[" + impossivel + "]}"))
+                .andExpect(status().isBadRequest());
+        verify(service, never()).receber(any());
+    }
+
+    @Test
     void baixarComSinceConverteOInstante() throws Exception {
         Instant since = Instant.parse("2026-10-26T19:00:00.123Z");
         when(service.enviarAlteracoes(since)).thenReturn(new PullResponse(List.of(), List.of(), since));
