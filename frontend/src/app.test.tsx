@@ -291,3 +291,94 @@ describe('validação conforme os limites da API', () => {
     expect((await screen.findByRole('alert')).textContent).toContain('até 3 casas decimais');
   });
 });
+
+describe('precisão das medidas e regra do diâmetro', () => {
+  async function calcular(diametro: string, id = 'RD-1') {
+    const user = userEvent.setup();
+    window.location.hash = '#/nova';
+    render(<App />);
+    await user.type(screen.getByLabelText('ID da roda'), id);
+    await user.type(screen.getByLabelText('Diâmetro (mm)'), diametro);
+    await user.type(screen.getByLabelText('Largura do aro (mm)'), '135');
+    await user.type(screen.getByLabelText('Espessura do friso (mm)'), '28');
+    await user.type(screen.getByLabelText('Altura do friso (mm)'), '30');
+    await user.type(screen.getByLabelText('Ângulo do eixo (°)'), '1');
+    await user.click(screen.getByRole('button', { name: 'Calcular perfil recomendado' }));
+    await screen.findByTestId('perfil-recomendado');
+    return user;
+  }
+  const calcularDeNovo = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(screen.getByRole('button', { name: 'Calcular perfil recomendado' }));
+  const campoDiametro = () => screen.getByLabelText<HTMLInputElement>('Diâmetro (mm)').value;
+
+  it('não perde casas ao voltar para editar e ao registrar', async () => {
+    const user = await calcular('840,123');
+    expect(screen.getByText('840,123')).toBeTruthy();
+
+    await user.click(screen.getByRole('link', { name: 'Voltar e ajustar medidas' }));
+    expect(await screen.findByRole('heading', { name: 'Nova roda', level: 1 })).toBeTruthy();
+    expect(campoDiametro()).toBe('840,123');
+
+    await calcularDeNovo(user);
+    await user.click(await screen.findByRole('button', { name: 'Registrar usinagem com este perfil' }));
+    await screen.findByRole('heading', { name: 'Histórico de usinagens' });
+
+    const [usinagem] = await db.usinagens.toArray();
+    expect(usinagem.medidasAntes.diametro).toBe(840.123);
+    expect(usinagem.medidasApos.diametro).toBe(838.423);
+    expect(screen.getByText('838,423')).toBeTruthy();
+  });
+
+  it('diâmetro acima de 1000 pode ser editado e recalculado', async () => {
+    const user = await calcular('1234,5');
+    await user.click(screen.getByRole('link', { name: 'Voltar e ajustar medidas' }));
+    await screen.findByRole('heading', { name: 'Nova roda', level: 1 });
+    expect(campoDiametro()).toBe('1234,5');
+
+    await calcularDeNovo(user);
+    expect(await screen.findByTestId('perfil-recomendado')).toBeTruthy();
+    expect(screen.getByText('1.234,5')).toBeTruthy();
+  });
+
+  it('roda existente traz as medidas atuais sem arredondar', async () => {
+    definirOnline(false);
+    await registrarUsinagem('RD-7', { ...MEDIDAS, diametro: 840.123 }, CONFIG_INICIAL.perfis[1], 1.8);
+    const user = userEvent.setup();
+    window.location.hash = '#/nova';
+    render(<App />);
+
+    await user.type(screen.getByLabelText('ID da roda'), 'RD-7');
+    await user.tab();
+
+    await waitFor(() => expect(campoDiametro()).toBe('838,323'));
+  });
+
+  it('barra o registro quando a remoção não cabe no diâmetro', async () => {
+    await calcular('1,5');
+
+    expect(screen.getByTestId('usinagem-impossivel').textContent).toContain('não cabe no diâmetro de 1,5 mm');
+    expect(screen.queryByRole('button', { name: 'Registrar usinagem com este perfil' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Voltar e ajustar medidas' })).toBeTruthy();
+    expect(await db.usinagens.count()).toBe(0);
+  });
+
+  it('o serviço também recusa e não grava nada', async () => {
+    await expect(registrarUsinagem('RD-1', { ...MEDIDAS, diametro: 1 }, CONFIG_INICIAL.perfis[0], 1.8)).rejects.toThrow(
+      'não cabe',
+    );
+    expect(await db.rodas.count()).toBe(0);
+    expect(await db.usinagens.count()).toBe(0);
+  });
+
+  it('Config preserva as casas dos limites e não mostra NaN em perfil novo', async () => {
+    await salvarConfig({ ...CONFIG_INICIAL, limites: { diametroMinimo: 780.125 } });
+    const user = userEvent.setup();
+    window.location.hash = '#/config';
+    render(<App />);
+
+    expect((await screen.findByLabelText<HTMLInputElement>('Diâmetro mínimo (mm)')).value).toBe('780,125');
+
+    await user.click(screen.getByRole('button', { name: 'Adicionar perfil' }));
+    expect(screen.getByLabelText<HTMLInputElement>('Alvo: espessura do friso (mm)').value).toBe('');
+  });
+});

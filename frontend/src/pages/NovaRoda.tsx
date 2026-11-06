@@ -2,7 +2,7 @@ import { useForm } from 'react-hook-form';
 import { IconeSeta, IlustracaoEixo } from '../components/icons';
 import { AvisoRecusados, NavInferior, StatusPill, TopbarMarca } from '../components/Layout';
 import { db } from '../db';
-import { cabeNaApi, fmtNum, parseNum } from '../format';
+import { cabeNaApi, paraCampo, parseNum } from '../format';
 import { medidasAtuais } from '../services/usinagens';
 import type { Medidas } from '../types';
 
@@ -30,7 +30,7 @@ const positivo = (rotulo: string) => ({
 });
 
 function paraForm(r?: Rascunho): FormValues {
-  const f = (n?: number) => (n === undefined ? '' : fmtNum(n, 1));
+  const f = (n?: number) => (n === undefined ? '' : paraCampo(n));
   return {
     rodaId: r?.rodaId ?? '',
     diametro: f(r?.medidas.diametro),
@@ -57,7 +57,7 @@ export function NovaRoda({ rascunho, onCalcular }: { rascunho?: Rascunho; onCalc
     const roda = await db.rodas.get(id);
     if (!roda) return;
     const m = medidasAtuais(roda, await db.usinagens.where('rodaId').equals(id).toArray());
-    (Object.keys(m) as (keyof Medidas)[]).forEach((k) => setValue(k, fmtNum(m[k], 1)));
+    (Object.keys(m) as (keyof Medidas)[]).forEach((k) => setValue(k, paraCampo(m[k])));
   };
 
   const onSubmit = (v: FormValues) =>

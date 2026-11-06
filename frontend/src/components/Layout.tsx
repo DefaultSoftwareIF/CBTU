@@ -28,7 +28,7 @@ export function AvisoRecusados() {
     ) ?? 0;
   if (recusados === 0) return null;
   return (
-    <p className="aviso-recusados" role="alert" data-testid="aviso-recusados">
+    <p className="aviso-erro" role="alert" data-testid="aviso-recusados">
       {recusados === 1 ? '1 registro recusado' : `${recusados} registros recusados`} pelo servidor. Os dados continuam
       neste aparelho; avise o suporte.
     </p>

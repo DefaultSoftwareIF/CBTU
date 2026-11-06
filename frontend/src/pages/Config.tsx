@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { IconeMais } from '../components/icons';
 import { NavInferior, TopbarVoltar } from '../components/Layout';
-import { cabeNaApi, fmtNum, parseNum } from '../format';
+import { cabeNaApi, paraCampo, parseNum } from '../format';
 import { useConfigCarregada } from '../hooks/useConfig';
 import { navegar } from '../hooks/useHashRoute';
 import { salvarConfig } from '../services/config';
 import type { Config as ConfigTipo, Limites, Perfil } from '../types';
 
-const texto = (n?: number) => (n === undefined ? '' : fmtNum(n, 1));
+/** Indefinido (limite em branco) e NaN (alvo de perfil novo) viram campo vazio. */
+const texto = (n?: number) => (n === undefined || Number.isNaN(n) ? '' : paraCampo(n));
 
 /** Campo vazio = limite não definido. Texto inválido = erro. */
 function lerLimite(t: string): number | undefined | 'invalido' {
