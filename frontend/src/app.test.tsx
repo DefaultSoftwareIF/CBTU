@@ -90,7 +90,8 @@ describe('fluxo principal', () => {
 
     // O indicador de conexão fica na tela "Nova roda" (como no protótipo).
     await user.click(screen.getByRole('link', { name: 'Nova roda' }));
-    expect((await screen.findByTestId('status-conexao')).textContent).toBe('Offline · 2 pendentes');
+    // waitFor: o contador começa em 0 até a consulta ao IndexedDB responder.
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Offline · 2 pendentes'));
 
     // A rede volta: envia e marca como sincronizado.
     definirOnline(true);
