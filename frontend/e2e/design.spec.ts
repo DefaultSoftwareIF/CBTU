@@ -40,3 +40,20 @@ test('cards seguem o espaçamento do design', async ({ page }) => {
   await expect(page.locator('.card.perfis')).toHaveCSS('row-gap', '4px');
   await expect(page.getByRole('button', { name: 'Adicionar perfil' })).toHaveCSS('min-height', '52px');
 });
+
+test('indicador de envio abre o detalhe e cabe no topo do celular', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  await page.goto('/');
+  const indicador = page.getByRole('button', { name: /a enviar/ });
+  const caixa = await indicador.boundingBox();
+  expect(caixa!.height).toBeGreaterThanOrEqual(44);
+  expect(caixa!.x + caixa!.width).toBeLessThanOrEqual(360);
+  const pill = await page.getByTestId('status-conexao').boundingBox();
+  expect(pill!.height).toBeLessThan(40); // não quebrou em duas linhas
+
+  await indicador.click();
+  const janela = page.getByRole('dialog', { name: 'Envio para o servidor' });
+  await expect(janela).toBeVisible();
+  await page.mouse.click(180, 40); // toque fora da janela fecha
+  await expect(janela).toBeHidden();
+});

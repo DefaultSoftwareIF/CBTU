@@ -91,12 +91,12 @@ describe('fluxo principal', () => {
     // O indicador de conexão fica na tela "Nova roda" (como no protótipo).
     await user.click(screen.getByRole('link', { name: 'Nova roda' }));
     // waitFor: o contador começa em 0 até a consulta ao IndexedDB responder.
-    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Offline · 2 pendentes'));
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Offline · 2 a enviar'));
 
     // A rede volta: envia e marca como sincronizado.
     definirOnline(true);
     await sincronizar();
-    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Online · 0 pendentes'));
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Online · 0 a enviar'));
     await user.click(screen.getByRole('link', { name: 'Histórico' }));
     expect((await screen.findByTestId('sync-status')).textContent).toBe('Sincronizado');
   });
@@ -235,7 +235,7 @@ describe('registro recusado pela API', () => {
     render(<App />);
 
     expect((await screen.findByTestId('aviso-recusados')).textContent).toContain('2 registros recusados');
-    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Online · 0 pendentes'));
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Online · 0 a enviar'));
 
     window.location.hash = '#/roda/RD-RUIM';
     window.dispatchEvent(new HashChangeEvent('hashchange'));
@@ -382,3 +382,66 @@ describe('precisão das medidas e regra do diâmetro', () => {
     expect(screen.getByLabelText<HTMLInputElement>('Alvo: espessura do friso (mm)').value).toBe('');
   });
 });
+
+describe('detalhe do que falta enviar', () => {
+  async function abrirDetalhe() {
+    const user = userEvent.setup();
+    window.location.hash = '#/nova';
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /a enviar/ }));
+    return { user, janela: await screen.findByRole('dialog', { name: 'Envio para o servidor' }) };
+  }
+
+  it('separa rodas e usinagens aguardando envio', async () => {
+    definirOnline(false);
+    await registrarUsinagem('RD-1', MEDIDAS, CONFIG_INICIAL.perfis[0], 1.8);
+    await registrarUsinagem('RD-2', MEDIDAS, CONFIG_INICIAL.perfis[0], 1.8);
+
+    const { janela } = await abrirDetalhe();
+
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Offline · 4 a enviar'));
+    expect(screen.getByTestId('fila-rodas').textContent).toBe('2');
+    expect(screen.getByTestId('fila-usinagens').textContent).toBe('2');
+    expect(janela.textContent).toContain('Sem conexão');
+    expect(screen.queryByTestId('fila-recusados')).toBeNull();
+  });
+
+  it('com conexão e algo parado, avisa que o servidor pode estar fora do alcance', async () => {
+    definirOnline(false);
+    await registrarUsinagem('RD-1', MEDIDAS, CONFIG_INICIAL.perfis[0], 1.8);
+    definirOnline(true);
+
+    const { janela } = await abrirDetalhe();
+
+    await waitFor(() => expect(janela.textContent).toContain('o servidor pode estar fora do alcance'));
+  });
+
+  it('sem nada pendente, diz que tudo foi enviado', async () => {
+    const { janela } = await abrirDetalhe();
+    expect(janela.textContent).toContain('já foi enviado');
+  });
+
+  it('mostra os recusados quando houver', async () => {
+    definirOnline(false);
+    await registrarUsinagem('RD-RUIM', MEDIDAS, CONFIG_INICIAL.perfis[0], 1.8);
+    await db.rodas.update('RD-RUIM', { syncStatus: 'recusado' });
+
+    await abrirDetalhe();
+
+    expect((await screen.findByTestId('fila-recusados')).textContent).toBe('1');
+    expect(screen.getByTestId('fila-rodas').textContent).toBe('0');
+  });
+
+  it('fecha pelo botão, pela tecla Esc e devolve o foco ao indicador', async () => {
+    const { user } = await abrirDetalhe();
+    await user.click(screen.getByRole('button', { name: 'Fechar' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /a enviar/ }));
+
+    await user.click(screen.getByRole('button', { name: /a enviar/ }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+

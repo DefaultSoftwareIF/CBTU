@@ -32,7 +32,7 @@ test('cadastra e registra usinagem offline, e sincroniza quando a rede volta', a
   await context.setOffline(true);
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Nova roda', level: 1 })).toBeVisible();
-  await expect(page.getByTestId('status-conexao')).toHaveText('Offline · 0 pendentes');
+  await expect(page.getByTestId('status-conexao')).toHaveText('Offline · 0 a enviar');
 
   // 3) Cadastra a roda com as medidas do protótipo e calcula o perfil (tudo no aparelho).
   await page.getByLabel('ID da roda', { exact: true }).fill('RD-0417');
@@ -51,11 +51,11 @@ test('cadastra e registra usinagem offline, e sincroniza quando a rede volta', a
   await expect(page.getByRole('heading', { name: 'Histórico de usinagens' })).toBeVisible();
   await expect(page.getByTestId('sync-status')).toHaveText('Pendente de envio');
   await page.getByRole('link', { name: 'Nova roda', exact: true }).click();
-  await expect(page.getByTestId('status-conexao')).toHaveText('Offline · 2 pendentes');
+  await expect(page.getByTestId('status-conexao')).toHaveText('Offline · 2 a enviar');
 
   // 5) Rede volta: tudo é enviado e passa a "Sincronizado".
   await context.setOffline(false);
-  await expect(page.getByTestId('status-conexao')).toHaveText('Online · 0 pendentes');
+  await expect(page.getByTestId('status-conexao')).toHaveText('Online · 0 a enviar');
   await page.getByRole('link', { name: 'Histórico', exact: true }).click();
   await expect(page.getByTestId('sync-status')).toHaveText('Sincronizado');
   expect(enviados.rodas).toEqual(['RD-0417']);
@@ -121,5 +121,5 @@ test('registro recusado pela API não trava o envio dos outros', async ({ page, 
 
   await page.getByRole('link', { name: 'Nova roda', exact: true }).click();
   await expect(page.getByTestId('aviso-recusados')).toContainText('2 registros recusados');
-  await expect(page.getByTestId('status-conexao')).toHaveText('Online · 0 pendentes');
+  await expect(page.getByTestId('status-conexao')).toHaveText('Online · 0 a enviar');
 });

@@ -38,6 +38,7 @@ h1, h2, p, dl, dd { margin: 0; }
 .titulo-topbar { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 22px; letter-spacing: 0.02em; }
 .codigo { font-family: 'IBM Plex Mono', monospace; font-size: 14px; background: var(--azul-escuro); padding: 6px 10px; border-radius: 6px; }
 .icone-btn { width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; color: #fff; margin-right: -12px; }
+.pill-botao { background: none; border: 0; padding: 0; margin-right: -4px; min-height: 44px; display: flex; align-items: center; color: #fff; font: inherit; cursor: pointer; }
 .pill-status { display: flex; align-items: center; gap: 8px; font-size: 12px; background: var(--azul-escuro); padding: 6px 10px; border-radius: 999px; }
 .ponto { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .ponto.ok { background: #6fcf97; }
@@ -154,3 +155,14 @@ input:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid 
   display: flex; gap: 8px; align-items: center; justify-content: space-between;
   background: var(--azul); color: #fff; padding: 12px 16px; border-radius: 12px; box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
 }
+
+/* ---------- janela de detalhe do envio ---------- */
+.modal-fundo { position: fixed; inset: 0; z-index: 20; background: rgb(0 0 0 / 0.45); display: flex; align-items: flex-end; justify-content: center; }
+.modal { width: 100%; max-width: 480px; background: var(--card); color: var(--texto); border-radius: 16px 16px 0 0; padding: 20px 20px 28px; display: flex; flex-direction: column; gap: 14px; }
+.modal-titulo { font-family: 'Barlow Condensed', sans-serif; font-weight: 700; font-size: 26px; line-height: 1.1; }
+.modal-texto { font-size: 14px; line-height: 1.45; color: var(--mudo); }
+.modal-lista { display: flex; flex-direction: column; }
+.modal-lista div { display: flex; justify-content: space-between; align-items: center; min-height: 44px; border-bottom: 1px solid var(--trilho); font-size: 15px; }
+.modal-lista dd { font-family: 'IBM Plex Mono', monospace; font-size: 18px; }
+.modal-lista .recusados { color: var(--erro); }
+
