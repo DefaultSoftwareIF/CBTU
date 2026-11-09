@@ -1,5 +1,5 @@
 import { db } from '../db';
-import type { PullResponse, PushResponse, RodaDto, UsinagemDto } from '../types';
+import type { PullResponse, PushResponse, Roda, RodaDto, Usinagem, UsinagemDto } from '../types';
 
 const API = import.meta.env.VITE_API_URL ?? '/api';
 const TAMANHO_LOTE = 100;
@@ -13,36 +13,63 @@ function lotes<T>(itens: T[], tamanho: number): T[][] {
   return out;
 }
 
+/**
+ * Envia um lote. Se a API recusar (400), divide o lote ao meio até achar o registro culpado:
+ * ele fica "recusado" e os outros seguem. Outras falhas (rede, 5xx) sobem e tudo continua como está.
+ */
+async function enviarLote(rodas: Roda[], usinagens: Usinagem[]): Promise<void> {
+  const total = rodas.length + usinagens.length;
+  const r = rodas.map(({ syncStatus: _s, syncedAt: _t, ...dto }): RodaDto => dto);
+  const u = usinagens.map(({ syncStatus: _s, syncedAt: _t, ...dto }): UsinagemDto => dto);
+
+  const res = await fetch(`${API}/sync`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rodas: r, usinagens: u }),
+  });
+
+  if (res.status === 400) {
+    if (total === 1) {
+      console.warn('Registro recusado pela API:', rodas[0]?.id ?? usinagens[0]?.id);
+      await Promise.all([
+        ...rodas.map((x) => db.rodas.update(x.id, { syncStatus: 'recusado' })),
+        ...usinagens.map((x) => db.usinagens.update(x.id, { syncStatus: 'recusado' })),
+      ]);
+      return;
+    }
+    const meio = Math.floor(total / 2);
+    const nRodas = Math.min(rodas.length, meio);
+    const nUsinagens = meio - nRodas;
+    await enviarLote(rodas.slice(0, nRodas), usinagens.slice(0, nUsinagens));
+    await enviarLote(rodas.slice(nRodas), usinagens.slice(nUsinagens));
+    return;
+  }
+  if (!res.ok) throw new Error(`Falha no envio: HTTP ${res.status}`);
+
+  const resp: PushResponse = await res.json();
+  const syncedAt = new Date().toISOString();
+  // "ignoradas" = o servidor já tem versão igual ou mais nova: também deixam de ser pendentes.
+  await Promise.all([
+    ...[...resp.rodasAceitas, ...resp.rodasIgnoradas].map((id) =>
+      db.rodas.update(id, { syncStatus: 'sincronizado', syncedAt }),
+    ),
+    ...[...resp.usinagensAceitas, ...resp.usinagensIgnoradas].map((id) =>
+      db.usinagens.update(id, { syncStatus: 'sincronizado', syncedAt }),
+    ),
+  ]);
+}
+
 async function enviarPendentes(): Promise<void> {
-  const rodas = await db.rodas.where('syncStatus').equals('pendente').toArray();
-  const usinagens = await db.usinagens.where('syncStatus').equals('pendente').sortBy('criadoEm');
+  // Os recusados voltam a cada envio: se a recusa vinha de uma regra que mudou na API, eles se resolvem sozinhos.
+  const rodas = await db.rodas.where('syncStatus').anyOf('pendente', 'recusado').toArray();
+  const usinagens = await db.usinagens.where('syncStatus').anyOf('pendente', 'recusado').sortBy('criadoEm');
 
   const loteRodas = lotes(rodas, TAMANHO_LOTE);
   const loteUsinagens = lotes(usinagens, TAMANHO_LOTE);
   const n = Math.max(loteRodas.length, loteUsinagens.length);
 
   for (let i = 0; i < n; i++) {
-    const r = (loteRodas[i] ?? []).map(({ syncStatus: _s, syncedAt: _t, ...dto }): RodaDto => dto);
-    const u = (loteUsinagens[i] ?? []).map(({ syncStatus: _s, syncedAt: _t, ...dto }): UsinagemDto => dto);
-
-    const res = await fetch(`${API}/sync`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ rodas: r, usinagens: u }),
-    });
-    if (!res.ok) throw new Error(`Falha no envio: HTTP ${res.status}`);
-
-    const resp: PushResponse = await res.json();
-    const syncedAt = new Date().toISOString();
-    // "ignoradas" = o servidor já tem versão igual ou mais nova: também deixam de ser pendentes.
-    await Promise.all([
-      ...[...resp.rodasAceitas, ...resp.rodasIgnoradas].map((id) =>
-        db.rodas.update(id, { syncStatus: 'sincronizado', syncedAt }),
-      ),
-      ...[...resp.usinagensAceitas, ...resp.usinagensIgnoradas].map((id) =>
-        db.usinagens.update(id, { syncStatus: 'sincronizado', syncedAt }),
-      ),
-    ]);
+    await enviarLote(loteRodas[i] ?? [], loteUsinagens[i] ?? []);
   }
 }
 

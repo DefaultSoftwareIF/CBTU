@@ -90,12 +90,13 @@ describe('fluxo principal', () => {
 
     // O indicador de conexão fica na tela "Nova roda" (como no protótipo).
     await user.click(screen.getByRole('link', { name: 'Nova roda' }));
-    expect((await screen.findByTestId('status-conexao')).textContent).toBe('Offline · 2 pendentes');
+    // waitFor: o contador começa em 0 até a consulta ao IndexedDB responder.
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Offline · 2 a enviar'));
 
     // A rede volta: envia e marca como sincronizado.
     definirOnline(true);
     await sincronizar();
-    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Online · 0 pendentes'));
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Online · 0 a enviar'));
     await user.click(screen.getByRole('link', { name: 'Histórico' }));
     expect((await screen.findByTestId('sync-status')).textContent).toBe('Sincronizado');
   });
@@ -146,3 +147,301 @@ describe('lista de rodas e limites', () => {
     expect(screen.queryByText('RD-0417')).toBeNull();
   });
 });
+
+describe('registro recusado pela API', () => {
+  const perfil = CONFIG_INICIAL.perfis[0];
+
+  /** Recusa com 400 qualquer lote que contenha a roda indicada, como o Bean Validation faz com o lote inteiro. */
+  function servidorQueRecusa(rodaId: string | null, status = 400) {
+    const fetchFalso = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method !== 'POST') return Response.json({ rodas: [], usinagens: [], cursor: '2026-10-26T20:00:00.000Z' });
+      const corpo = JSON.parse(init.body as string) as { rodas: { id: string }[]; usinagens: { id: string; rodaId: string }[] };
+      if (rodaId && (corpo.rodas.some((r) => r.id === rodaId) || corpo.usinagens.some((u) => u.rodaId === rodaId))) {
+        return new Response(null, { status });
+      }
+      return Response.json({
+        rodasAceitas: corpo.rodas.map((r) => r.id),
+        rodasIgnoradas: [],
+        usinagensAceitas: corpo.usinagens.map((u) => u.id),
+        usinagensIgnoradas: [],
+      });
+    });
+    vi.stubGlobal('fetch', fetchFalso);
+    return fetchFalso;
+  }
+
+  async function registrarOffline(...ids: string[]) {
+    definirOnline(false);
+    for (const id of ids) await registrarUsinagem(id, MEDIDAS, perfil, 1.8);
+    definirOnline(true);
+  }
+
+  const statusRodas = async () =>
+    Object.fromEntries((await db.rodas.toArray()).map((r) => [r.id, r.syncStatus]));
+
+  it('isola o registro recusado e envia os outros do mesmo lote', async () => {
+    await registrarOffline('RD-1', 'RD-RUIM', 'RD-3', 'RD-4');
+    servidorQueRecusa('RD-RUIM');
+
+    await sincronizar();
+
+    expect(await statusRodas()).toEqual({
+      'RD-1': 'sincronizado',
+      'RD-RUIM': 'recusado',
+      'RD-3': 'sincronizado',
+      'RD-4': 'sincronizado',
+    });
+    const usinagens = await db.usinagens.toArray();
+    expect(usinagens.filter((u) => u.syncStatus === 'recusado').map((u) => u.rodaId)).toEqual(['RD-RUIM']);
+    expect(usinagens.filter((u) => u.syncStatus === 'sincronizado')).toHaveLength(3);
+  });
+
+  it('continua baixando alterações depois de uma recusa', async () => {
+    await registrarOffline('RD-RUIM');
+    const fetchFalso = servidorQueRecusa('RD-RUIM');
+
+    await sincronizar();
+
+    expect(fetchFalso.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method !== 'POST')).toBe(true);
+    expect((await db.meta.get('syncCursor'))?.valor).toBe('2026-10-26T20:00:00.000Z');
+  });
+
+  it('reenvia o recusado e ele se resolve quando a API passa a aceitar', async () => {
+    await registrarOffline('RD-RUIM');
+    servidorQueRecusa('RD-RUIM');
+    await sincronizar();
+    expect((await db.rodas.get('RD-RUIM'))?.syncStatus).toBe('recusado');
+
+    servidorQueRecusa(null);
+    await sincronizar();
+
+    expect((await db.rodas.get('RD-RUIM'))?.syncStatus).toBe('sincronizado');
+  });
+
+  it('falha de servidor (500) não marca como recusado: tudo segue pendente', async () => {
+    await registrarOffline('RD-1');
+    servidorQueRecusa('RD-1', 500);
+
+    await sincronizar();
+
+    expect((await db.rodas.get('RD-1'))?.syncStatus).toBe('pendente');
+  });
+
+  it('mostra o aviso e o selo ao usuário, sem contar como pendente', async () => {
+    await registrarOffline('RD-RUIM');
+    servidorQueRecusa('RD-RUIM');
+    await sincronizar();
+
+    render(<App />);
+
+    expect((await screen.findByTestId('aviso-recusados')).textContent).toContain('2 registros recusados');
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Online · 0 a enviar'));
+
+    window.location.hash = '#/roda/RD-RUIM';
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    expect((await screen.findByTestId('sync-status')).textContent).toBe('Recusado pelo servidor');
+    expect(screen.getByTestId('sync-status-roda').textContent).toBe('Recusado pelo servidor');
+  });
+});
+
+describe('validação conforme os limites da API', () => {
+  async function preencher(campos: Partial<Record<string, string>>) {
+    const user = userEvent.setup();
+    window.location.hash = '#/nova';
+    render(<App />);
+    const valores: Record<string, string> = {
+      'ID da roda': 'RD-1',
+      'Diâmetro (mm)': '840',
+      'Largura do aro (mm)': '135',
+      'Espessura do friso (mm)': '28',
+      'Altura do friso (mm)': '30',
+      'Ângulo do eixo (°)': '1',
+      ...campos,
+    };
+    for (const [rotulo, valor] of Object.entries(valores)) await user.type(screen.getByLabelText(rotulo), valor!);
+    await user.click(screen.getByRole('button', { name: 'Calcular perfil recomendado' }));
+  }
+
+  it.each([
+    ['Diâmetro (mm)', '840,1234', 'Use até 5 dígitos e 3 casas decimais'],
+    ['Diâmetro (mm)', '100000', 'Use até 5 dígitos e 3 casas decimais'],
+    ['Ângulo do eixo (°)', '1,2345', 'Use até 3 dígitos e 3 casas decimais'],
+    ['Ângulo do eixo (°)', '1000', 'Use até 3 dígitos e 3 casas decimais'],
+    ['ID da roda', 'R'.repeat(41), 'Use no máximo 40 caracteres'],
+  ])('%s com "%s" é barrado no formulário', async (rotulo, valor, mensagem) => {
+    await preencher({ [rotulo]: valor });
+    expect(await screen.findByText(mensagem)).toBeTruthy();
+    expect(screen.queryByTestId('perfil-recomendado')).toBeNull();
+  });
+
+  it('aceita o limite exato de 3 casas decimais', async () => {
+    await preencher({ 'Diâmetro (mm)': '840,123' });
+    expect(await screen.findByTestId('perfil-recomendado')).toBeTruthy();
+  });
+
+  it('Config barra alvo de perfil com mais de 3 casas decimais', async () => {
+    const user = userEvent.setup();
+    window.location.hash = '#/config';
+    render(<App />);
+    await user.click((await screen.findAllByRole('button', { name: 'Editar' }))[0]);
+    const alvo = screen.getByLabelText('Alvo: espessura do friso (mm)');
+    await user.clear(alvo);
+    await user.type(alvo, '26,1234');
+    await user.click(screen.getByRole('button', { name: 'Salvar configurações' }));
+    expect((await screen.findByRole('alert')).textContent).toContain('até 3 casas decimais');
+  });
+});
+
+describe('precisão das medidas e regra do diâmetro', () => {
+  async function calcular(diametro: string, id = 'RD-1') {
+    const user = userEvent.setup();
+    window.location.hash = '#/nova';
+    render(<App />);
+    await user.type(screen.getByLabelText('ID da roda'), id);
+    await user.type(screen.getByLabelText('Diâmetro (mm)'), diametro);
+    await user.type(screen.getByLabelText('Largura do aro (mm)'), '135');
+    await user.type(screen.getByLabelText('Espessura do friso (mm)'), '28');
+    await user.type(screen.getByLabelText('Altura do friso (mm)'), '30');
+    await user.type(screen.getByLabelText('Ângulo do eixo (°)'), '1');
+    await user.click(screen.getByRole('button', { name: 'Calcular perfil recomendado' }));
+    await screen.findByTestId('perfil-recomendado');
+    return user;
+  }
+  const calcularDeNovo = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(screen.getByRole('button', { name: 'Calcular perfil recomendado' }));
+  const campoDiametro = () => screen.getByLabelText<HTMLInputElement>('Diâmetro (mm)').value;
+
+  it('não perde casas ao voltar para editar e ao registrar', async () => {
+    const user = await calcular('840,123');
+    expect(screen.getByText('840,123')).toBeTruthy();
+
+    await user.click(screen.getByRole('link', { name: 'Voltar e ajustar medidas' }));
+    expect(await screen.findByRole('heading', { name: 'Nova roda', level: 1 })).toBeTruthy();
+    expect(campoDiametro()).toBe('840,123');
+
+    await calcularDeNovo(user);
+    await user.click(await screen.findByRole('button', { name: 'Registrar usinagem com este perfil' }));
+    await screen.findByRole('heading', { name: 'Histórico de usinagens' });
+
+    const [usinagem] = await db.usinagens.toArray();
+    expect(usinagem.medidasAntes.diametro).toBe(840.123);
+    expect(usinagem.medidasApos.diametro).toBe(838.423);
+    expect(screen.getByText('838,423')).toBeTruthy();
+  });
+
+  it('diâmetro acima de 1000 pode ser editado e recalculado', async () => {
+    const user = await calcular('1234,5');
+    await user.click(screen.getByRole('link', { name: 'Voltar e ajustar medidas' }));
+    await screen.findByRole('heading', { name: 'Nova roda', level: 1 });
+    expect(campoDiametro()).toBe('1234,5');
+
+    await calcularDeNovo(user);
+    expect(await screen.findByTestId('perfil-recomendado')).toBeTruthy();
+    expect(screen.getByText('1.234,5')).toBeTruthy();
+  });
+
+  it('roda existente traz as medidas atuais sem arredondar', async () => {
+    definirOnline(false);
+    await registrarUsinagem('RD-7', { ...MEDIDAS, diametro: 840.123 }, CONFIG_INICIAL.perfis[1], 1.8);
+    const user = userEvent.setup();
+    window.location.hash = '#/nova';
+    render(<App />);
+
+    await user.type(screen.getByLabelText('ID da roda'), 'RD-7');
+    await user.tab();
+
+    await waitFor(() => expect(campoDiametro()).toBe('838,323'));
+  });
+
+  it('barra o registro quando a remoção não cabe no diâmetro', async () => {
+    await calcular('1,5');
+
+    expect(screen.getByTestId('usinagem-impossivel').textContent).toContain('não cabe no diâmetro de 1,5 mm');
+    expect(screen.queryByRole('button', { name: 'Registrar usinagem com este perfil' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Voltar e ajustar medidas' })).toBeTruthy();
+    expect(await db.usinagens.count()).toBe(0);
+  });
+
+  it('o serviço também recusa e não grava nada', async () => {
+    await expect(registrarUsinagem('RD-1', { ...MEDIDAS, diametro: 1 }, CONFIG_INICIAL.perfis[0], 1.8)).rejects.toThrow(
+      'não cabe',
+    );
+    expect(await db.rodas.count()).toBe(0);
+    expect(await db.usinagens.count()).toBe(0);
+  });
+
+  it('Config preserva as casas dos limites e não mostra NaN em perfil novo', async () => {
+    await salvarConfig({ ...CONFIG_INICIAL, limites: { diametroMinimo: 780.125 } });
+    const user = userEvent.setup();
+    window.location.hash = '#/config';
+    render(<App />);
+
+    expect((await screen.findByLabelText<HTMLInputElement>('Diâmetro mínimo (mm)')).value).toBe('780,125');
+
+    await user.click(screen.getByRole('button', { name: 'Adicionar perfil' }));
+    expect(screen.getByLabelText<HTMLInputElement>('Alvo: espessura do friso (mm)').value).toBe('');
+  });
+});
+
+describe('detalhe do que falta enviar', () => {
+  async function abrirDetalhe() {
+    const user = userEvent.setup();
+    window.location.hash = '#/nova';
+    render(<App />);
+    await user.click(await screen.findByRole('button', { name: /a enviar/ }));
+    return { user, janela: await screen.findByRole('dialog', { name: 'Envio para o servidor' }) };
+  }
+
+  it('separa rodas e usinagens aguardando envio', async () => {
+    definirOnline(false);
+    await registrarUsinagem('RD-1', MEDIDAS, CONFIG_INICIAL.perfis[0], 1.8);
+    await registrarUsinagem('RD-2', MEDIDAS, CONFIG_INICIAL.perfis[0], 1.8);
+
+    const { janela } = await abrirDetalhe();
+
+    await waitFor(() => expect(screen.getByTestId('status-conexao').textContent).toBe('Offline · 4 a enviar'));
+    expect(screen.getByTestId('fila-rodas').textContent).toBe('2');
+    expect(screen.getByTestId('fila-usinagens').textContent).toBe('2');
+    expect(janela.textContent).toContain('Sem conexão');
+    expect(screen.queryByTestId('fila-recusados')).toBeNull();
+  });
+
+  it('com conexão e algo parado, avisa que o servidor pode estar fora do alcance', async () => {
+    definirOnline(false);
+    await registrarUsinagem('RD-1', MEDIDAS, CONFIG_INICIAL.perfis[0], 1.8);
+    definirOnline(true);
+
+    const { janela } = await abrirDetalhe();
+
+    await waitFor(() => expect(janela.textContent).toContain('o servidor pode estar fora do alcance'));
+  });
+
+  it('sem nada pendente, diz que tudo foi enviado', async () => {
+    const { janela } = await abrirDetalhe();
+    expect(janela.textContent).toContain('já foi enviado');
+  });
+
+  it('mostra os recusados quando houver', async () => {
+    definirOnline(false);
+    await registrarUsinagem('RD-RUIM', MEDIDAS, CONFIG_INICIAL.perfis[0], 1.8);
+    await db.rodas.update('RD-RUIM', { syncStatus: 'recusado' });
+
+    await abrirDetalhe();
+
+    expect((await screen.findByTestId('fila-recusados')).textContent).toBe('1');
+    expect(screen.getByTestId('fila-rodas').textContent).toBe('0');
+  });
+
+  it('fecha pelo botão, pela tecla Esc e devolve o foco ao indicador', async () => {
+    const { user } = await abrirDetalhe();
+    await user.click(screen.getByRole('button', { name: 'Fechar' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: /a enviar/ }));
+
+    await user.click(screen.getByRole('button', { name: /a enviar/ }));
+    expect(await screen.findByRole('dialog')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+

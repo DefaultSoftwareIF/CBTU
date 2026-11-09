@@ -5,6 +5,7 @@ import {
   medidasAposUsinagem,
   ranquear,
   situacaoRoda,
+  usinagemPossivel,
   usinagensAteDescarte,
 } from './calculo';
 import type { Medidas } from '../types';
@@ -88,5 +89,21 @@ describe('situacaoRoda', () => {
 
   it('descarta pela espessura mínima do friso', () => {
     expect(situacaoRoda({ ...rd0417, frisoEspessura: 22 }, limites)).toBe('DESCARTE');
+  });
+});
+
+describe('precisão e limites da usinagem', () => {
+  it('medidasAposUsinagem mantém as 3 casas do diâmetro', () => {
+    expect(medidasAposUsinagem({ ...rd0417, diametro: 840.123 }, PERFIS_INICIAIS[1], 1.8).diametro).toBe(838.323);
+  });
+
+  it.each([
+    [840, 1.8, true],
+    [1.801, 1.8, true],
+    [1.8, 1.8, false], // sobraria diâmetro zero
+    [1, 1.8, false],
+    [0.3, 0.1 + 0.2, false], // ruído de ponto flutuante não pode liberar
+  ])('diâmetro %d com remoção %d: %s', (diametro, remocao, esperado) => {
+    expect(usinagemPossivel(diametro, remocao)).toBe(esperado);
   });
 });

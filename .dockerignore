@@ -1,0 +1,7 @@
+**/node_modules
+**/dist
+**/target
+**/test-results
+.git
+.env
+certs
