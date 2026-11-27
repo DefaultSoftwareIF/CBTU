@@ -67,3 +67,15 @@ export const Marca = () => (
     <path d="M16 3v6M16 23v6M3 16h6M23 16h6" />
   </svg>
 );
+
+/** Desenho ilustrativo do card "Eixo": não varia com o ângulo digitado. */
+export function IlustracaoEixo() {
+  return (
+    <svg width="96" height="56" viewBox="0 0 96 56" fill="none" aria-hidden="true" data-testid="ilustracao-eixo">
+      <line x1="6" y1="40" x2="90" y2="40" stroke="#8A8F95" strokeWidth="2" strokeDasharray="4 4" />
+      <line x1="6" y1="40" x2="88" y2="14" stroke="#26394A" strokeWidth="4" strokeLinecap="round" />
+      <path d="M52 40a46 46 0 0 0-6-10" stroke="#B83E0B" strokeWidth="2" />
+      <circle cx="6" cy="40" r="5" fill="#26394A" />
+    </svg>
+  );
+}

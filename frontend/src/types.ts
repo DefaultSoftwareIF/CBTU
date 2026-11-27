@@ -1,4 +1,5 @@
-export type SyncStatus = 'pendente' | 'sincronizado';
+/** 'recusado': a API respondeu 400 para este registro. Continua no aparelho e é reenviado a cada sincronização. */
+export type SyncStatus = 'pendente' | 'sincronizado' | 'recusado';
 export type Situacao = 'EM_USO' | 'ATENCAO' | 'DESCARTE';
 
 /** Medidas da roda, todas em mm, exceto anguloEixo (graus). */

@@ -1,0 +1,6 @@
+# Só para desenvolvimento: expõe o MongoDB em localhost para rodar a API fora do Docker.
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d mongo
+services:
+  mongo:
+    ports:
+      - "127.0.0.1:27017:27017"

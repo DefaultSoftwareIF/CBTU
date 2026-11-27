@@ -3,6 +3,10 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
   timeout: 30_000,
+  // No CI: uma nova tentativa (que grava o rastro) e relatório HTML para baixar. Teste com .only não passa.
+  retries: process.env.CI ? 1 : 0,
+  forbidOnly: !!process.env.CI,
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: 'http://localhost:4173',
     trace: 'on-first-retry',

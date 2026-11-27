@@ -19,6 +19,8 @@ export const PERFIS_INICIAIS: Perfil[] = [
 export const CONFIG_INICIAL: Config = { perfis: PERFIS_INICIAIS, limites: {} };
 
 const arred1 = (n: number) => Math.round(n * 10) / 10;
+/** Tira o ruído de ponto flutuante sem perder as 3 casas que as medidas podem ter. */
+const arred3 = (n: number) => Math.round(n * 1000) / 1000;
 
 /**
  * Material removido (mm) para levar a roda ao perfil.
@@ -49,10 +51,15 @@ export function ranquear(m: Medidas, perfis: Perfil[]): ItemRanking[] {
 export function medidasAposUsinagem(m: Medidas, perfil: Perfil, remocaoMm: number): Medidas {
   return {
     ...m,
-    diametro: arred1(m.diametro - remocaoMm),
+    diametro: arred3(m.diametro - remocaoMm),
     frisoEspessura: Math.min(m.frisoEspessura, perfil.alvoFrisoEspessura),
     frisoAltura: Math.min(m.frisoAltura, perfil.alvoFrisoAltura),
   };
+}
+
+/** Regra de negócio: a usinagem só é possível se sobrar diâmetro depois da remoção. */
+export function usinagemPossivel(diametro: number, remocaoMm: number): boolean {
+  return arred3(diametro - remocaoMm) > 0;
 }
 
 /** Quantas usinagens iguais ainda cabem até o diâmetro mínimo. null se o limite não foi configurado. */

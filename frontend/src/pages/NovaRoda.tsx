@@ -1,8 +1,8 @@
 import { useForm } from 'react-hook-form';
-import { IconeSeta } from '../components/icons';
-import { NavInferior, StatusPill, TopbarMarca } from '../components/Layout';
+import { IconeSeta, IlustracaoEixo } from '../components/icons';
+import { AvisoRecusados, NavInferior, StatusPill, TopbarMarca } from '../components/Layout';
 import { db } from '../db';
-import { fmtNum, parseNum } from '../format';
+import { cabeNaApi, paraCampo, parseNum } from '../format';
 import { medidasAtuais } from '../services/usinagens';
 import type { Medidas } from '../types';
 
@@ -24,12 +24,13 @@ const positivo = (rotulo: string) => ({
   required: `Informe ${rotulo}`,
   validate: (t: string) => {
     const n = parseNum(t);
-    return (Number.isFinite(n) && n > 0) || 'Informe um número maior que zero';
+    if (!Number.isFinite(n) || n <= 0) return 'Informe um número maior que zero';
+    return cabeNaApi(n, 5) || 'Use até 5 dígitos e 3 casas decimais';
   },
 });
 
 function paraForm(r?: Rascunho): FormValues {
-  const f = (n?: number) => (n === undefined ? '' : fmtNum(n, 1));
+  const f = (n?: number) => (n === undefined ? '' : paraCampo(n));
   return {
     rodaId: r?.rodaId ?? '',
     diametro: f(r?.medidas.diametro),
@@ -56,7 +57,7 @@ export function NovaRoda({ rascunho, onCalcular }: { rascunho?: Rascunho; onCalc
     const roda = await db.rodas.get(id);
     if (!roda) return;
     const m = medidasAtuais(roda, await db.usinagens.where('rodaId').equals(id).toArray());
-    (Object.keys(m) as (keyof Medidas)[]).forEach((k) => setValue(k, fmtNum(m[k], 1)));
+    (Object.keys(m) as (keyof Medidas)[]).forEach((k) => setValue(k, paraCampo(m[k])));
   };
 
   const onSubmit = (v: FormValues) =>
@@ -100,6 +101,7 @@ export function NovaRoda({ rascunho, onCalcular }: { rascunho?: Rascunho; onCalc
       </TopbarMarca>
 
       <main className="conteudo">
+        <AvisoRecusados />
         <div className="titulo-bloco">
           <h1>Nova roda</h1>
           <p>
@@ -116,6 +118,7 @@ export function NovaRoda({ rascunho, onCalcular }: { rascunho?: Rascunho; onCalc
               {
                 required: 'Informe o ID da roda',
                 pattern: { value: /^[A-Za-z0-9-]+$/, message: 'Use só letras, números e hífen' },
+                maxLength: { value: 40, message: 'Use no máximo 40 caracteres' },
               },
               true,
             )}
@@ -133,10 +136,17 @@ export function NovaRoda({ rascunho, onCalcular }: { rascunho?: Rascunho; onCalc
 
           <section className="card">
             <h2 className="card-titulo">3 · Eixo</h2>
-            {campo('anguloEixo', 'Ângulo do eixo (°)', {
-              required: 'Informe o ângulo do eixo',
-              validate: (t: string) => Number.isFinite(parseNum(t)) || 'Informe um número',
-            })}
+            <div className="eixo-linha">
+              {campo('anguloEixo', 'Ângulo do eixo (°)', {
+                required: 'Informe o ângulo do eixo',
+                validate: (t: string) => {
+                  const n = parseNum(t);
+                  if (!Number.isFinite(n)) return 'Informe um número';
+                  return cabeNaApi(n, 3) || 'Use até 3 dígitos e 3 casas decimais';
+                },
+              })}
+              <IlustracaoEixo />
+            </div>
           </section>
 
           <button type="submit" className="btn-primario">

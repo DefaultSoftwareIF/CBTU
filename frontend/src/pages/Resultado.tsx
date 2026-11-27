@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavInferior, TopbarVoltar } from '../components/Layout';
-import { ranquear, usinagensAteDescarte } from '../domain/calculo';
+import { ranquear, usinagemPossivel, usinagensAteDescarte } from '../domain/calculo';
 import { fmtMm, fmtNum } from '../format';
 import { useConfig } from '../hooks/useConfig';
 import { navegar } from '../hooks/useHashRoute';
@@ -16,9 +16,10 @@ export function Resultado({ rascunho, onRegistrado }: { rascunho: Rascunho; onRe
   const melhor = ranking[0];
   const maior = Math.max(...ranking.map((i) => i.remocaoMm));
   const restantes = melhor ? usinagensAteDescarte(medidas.diametro, melhor.remocaoMm, limites) : null;
+  const possivel = melhor ? usinagemPossivel(medidas.diametro, melhor.remocaoMm) : false;
 
   const registrar = async () => {
-    if (!melhor || salvando) return; // trava duplo toque: não duplica a usinagem
+    if (!melhor || !possivel || salvando) return; // trava duplo toque: não duplica a usinagem
     setSalvando(true);
     await registrarUsinagem(rodaId, medidas, melhor.perfil, melhor.remocaoMm);
     onRegistrado();
@@ -58,7 +59,7 @@ export function Resultado({ rascunho, onRegistrado }: { rascunho: Rascunho; onRe
               {restantes === null && <p className="dica">Defina o diâmetro mínimo em Config para estimar.</p>}
             </section>
 
-            <section className="card">
+            <section className="card barras">
               <h2 className="card-titulo">Material removido por perfil</h2>
               {ranking.map((item, i) => (
                 <div className="barra" key={item.perfil.id}>
@@ -76,7 +77,7 @@ export function Resultado({ rascunho, onRegistrado }: { rascunho: Rascunho; onRe
               ))}
             </section>
 
-            <section className="card">
+            <section className="card parametros-card">
               <h2 className="card-titulo">Parâmetros usados</h2>
               <dl className="parametros">
                 <div><dt>Diâmetro</dt><dd>{fmtNum(medidas.diametro)}</dd></div>
@@ -91,9 +92,15 @@ export function Resultado({ rascunho, onRegistrado }: { rascunho: Rascunho; onRe
               Cálculo provisório: a fórmula e os alvos dos perfis ainda precisam ser validados com a oficina.
             </p>
 
-            <button className="btn-primario" onClick={registrar} disabled={salvando}>
-              Registrar usinagem com este perfil
-            </button>
+            {possivel ? (
+              <button className="btn-primario" onClick={registrar} disabled={salvando}>
+                Registrar usinagem com este perfil
+              </button>
+            ) : (
+              <p className="aviso-erro" role="alert" data-testid="usinagem-impossivel">
+                A remoção de {fmtMm(melhor.remocaoMm)} não cabe no diâmetro de {fmtMm(medidas.diametro)}. Confira as medidas.
+              </p>
+            )}
             <a className="btn-secundario" href="#/nova">
               Voltar e ajustar medidas
             </a>

@@ -3,7 +3,13 @@ import { NavInferior, TopbarVoltar } from '../components/Layout';
 import { db } from '../db';
 import { fmtData, fmtMm, fmtNum } from '../format';
 import { medidasAtuais } from '../services/usinagens';
-import type { Roda, Usinagem } from '../types';
+import type { Roda, SyncStatus, Usinagem } from '../types';
+
+const ROTULO_SYNC: Record<SyncStatus, string> = {
+  pendente: 'Pendente de envio',
+  sincronizado: 'Sincronizado',
+  recusado: 'Recusado pelo servidor',
+};
 
 interface Dados {
   roda: Roda;
@@ -98,15 +104,14 @@ export function Historico({ rodaId }: { rodaId?: string }) {
         <section className="card linha-tempo">
           {[...usinagens].reverse().map((u, i) => {
             const numero = usinagens.length - i;
-            const pendente = u.syncStatus === 'pendente';
             return (
               <div className="evento" key={u.id} data-testid="usinagem">
                 <div className="evento-topo">
                   <span className="evento-titulo">
                     Usinagem {numero} · {u.perfilNome}
                   </span>
-                  <span className={`selo ${pendente ? 'pendente' : 'sincronizado'}`} data-testid="sync-status">
-                    {pendente ? 'Pendente de envio' : 'Sincronizado'}
+                  <span className={`selo ${u.syncStatus}`} data-testid="sync-status">
+                    {ROTULO_SYNC[u.syncStatus]}
                   </span>
                 </div>
                 <div className="evento-detalhe">
@@ -117,7 +122,14 @@ export function Historico({ rodaId }: { rodaId?: string }) {
             );
           })}
           <div className="evento">
-            <span className="evento-titulo">Cadastro da roda</span>
+            <div className="evento-topo">
+              <span className="evento-titulo">Cadastro da roda</span>
+              {roda.syncStatus === 'recusado' && (
+                <span className="selo recusado" data-testid="sync-status-roda">
+                  {ROTULO_SYNC.recusado}
+                </span>
+              )}
+            </div>
             <div className="evento-detalhe">
               {fmtData(roda.criadoEm)} · diâmetro inicial <span className="mono">{fmtMm(roda.medidasIniciais.diametro)}</span>
             </div>

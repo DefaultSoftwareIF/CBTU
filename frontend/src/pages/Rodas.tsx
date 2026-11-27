@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
-import { LinkConfig, NavInferior, TopbarMarca } from '../components/Layout';
+import { AvisoRecusados, LinkConfig, NavInferior, TopbarMarca } from '../components/Layout';
 import { situacaoRoda } from '../domain/calculo';
 import { db } from '../db';
 import { fmtMm } from '../format';
@@ -53,6 +53,7 @@ export function Rodas() {
       </TopbarMarca>
 
       <main className="conteudo">
+        <AvisoRecusados />
         <h1>Rodas</h1>
 
         <div className="campo">

@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { IconeMais } from '../components/icons';
 import { NavInferior, TopbarVoltar } from '../components/Layout';
-import { fmtNum, parseNum } from '../format';
+import { cabeNaApi, paraCampo, parseNum } from '../format';
 import { useConfigCarregada } from '../hooks/useConfig';
 import { navegar } from '../hooks/useHashRoute';
 import { salvarConfig } from '../services/config';
 import type { Config as ConfigTipo, Limites, Perfil } from '../types';
 
-const texto = (n?: number) => (n === undefined ? '' : fmtNum(n, 1));
+/** Indefinido (limite em branco) e NaN (alvo de perfil novo) viram campo vazio. */
+const texto = (n?: number) => (n === undefined || Number.isNaN(n) ? '' : paraCampo(n));
 
 /** Campo vazio = limite não definido. Texto inválido = erro. */
 function lerLimite(t: string): number | undefined | 'invalido' {
@@ -42,12 +43,17 @@ function ConfigForm({ inicial }: { inicial: ConfigTipo }) {
   };
 
   const salvar = async () => {
+    const alvoValido = (n: number) => n > 0 && cabeNaApi(n, 5);
     const invalido = perfis.find(
-      (p) => !p.nome.trim() || !(p.alvoFrisoEspessura > 0) || !(p.alvoFrisoAltura > 0),
+      (p) =>
+        !p.nome.trim() ||
+        p.nome.trim().length > 100 ||
+        !alvoValido(p.alvoFrisoEspessura) ||
+        !alvoValido(p.alvoFrisoAltura),
     );
     if (invalido) {
       setEditando(invalido.id);
-      setErro('Preencha nome e alvos (maiores que zero) de todos os perfis.');
+      setErro('Preencha nome (até 100 caracteres) e alvos (maiores que zero, até 3 casas decimais) de todos os perfis.');
       return;
     }
 
@@ -90,7 +96,7 @@ function ConfigForm({ inicial }: { inicial: ConfigTipo }) {
           <p>Defina quais perfis entram na comparação e quando uma roda deve ser descartada.</p>
         </div>
 
-        <section className="card">
+        <section className="card perfis">
           <h2 className="card-titulo">Perfis considerados</h2>
           {perfis.map((p) => (
             <div className="perfil" key={p.id}>

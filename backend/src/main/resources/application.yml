@@ -1,0 +1,11 @@
+spring:
+  data:
+    mongodb:
+      uri: ${MONGODB_URI:mongodb://localhost:27017/rodatrack}
+      auto-index-creation: true
+  mvc:
+    problemdetails:
+      enabled: true # erros 400 em formato RFC 9457 (application/problem+json)
+
+server:
+  port: 8080

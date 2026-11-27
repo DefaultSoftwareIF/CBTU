@@ -1,5 +1,5 @@
 import { getUsuarioId } from '../auth';
-import { REGRA_VERSAO, medidasAposUsinagem } from '../domain/calculo';
+import { REGRA_VERSAO, medidasAposUsinagem, usinagemPossivel } from '../domain/calculo';
 import { db } from '../db';
 import { sincronizar } from './sync';
 import type { Medidas, Perfil, Roda, Usinagem } from '../types';
@@ -15,6 +15,10 @@ export function medidasAtuais(roda: Roda, usinagens: Usinagem[]): Medidas {
  * funciona offline e depois dispara a sincronização.
  */
 export async function registrarUsinagem(rodaId: string, medidas: Medidas, perfil: Perfil, remocaoMm: number) {
+  if (!usinagemPossivel(medidas.diametro, remocaoMm)) {
+    throw new Error(`Remoção de ${remocaoMm} mm não cabe no diâmetro de ${medidas.diametro} mm`);
+  }
+
   const agora = new Date().toISOString();
   const usuarioId = getUsuarioId();
 
